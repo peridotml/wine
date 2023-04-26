@@ -120,13 +120,17 @@ def performance_report(results: Dict[str, float]):
 
 
 @dynamic
-def training_workflow(regularization: List[float] = [1., 10.]):
+def training_workflow(regularization: List[float]):
     """Put all of the steps together into a single workflow."""
     data = load_data()
     processed_data = etl_preprocess_data(data=data)
 
     results = {}
     for c in regularization:
+        if c < 1:
+            c = "{:.0E}".format(c)
+        else:
+            c = int(c)
         name = f"train_model[C={str(c)}]"
         model = train_model(
             data=processed_data,
