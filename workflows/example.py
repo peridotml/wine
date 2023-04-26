@@ -6,8 +6,8 @@ from flytekit import task, dynamic, workflow
 
 import base64
 from io import BytesIO, StringIO
-from typing import List, Union, Dict
-
+from typing import List, Union, Dict, Tuple
+import numpy as np
 from flytekit.types.file import FlyteFile
 from PIL import Image
 import flytekit
@@ -61,10 +61,14 @@ def load_data() -> pd.DataFrame:
     return df
 
 @task
-def etl_preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
+def etl_preprocess_data(data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """A place holder that would exist IRL"""
     data["engineered"] = data["feature_1"]**2 + data["feature_2"]
-    return data
+
+    msk = np.random.rand(len(data)) < 0.8
+
+
+    return data[msk], data[~msk]
 
 @task
 def train_model(data: pd.DataFrame, hyperparameters: dict) -> LogisticRegression:
@@ -111,6 +115,7 @@ def validate_model(model: LogisticRegression, data: pd.DataFrame) -> float:
 
     return float(score)
 
+
 @task(disable_deck=False)
 def performance_report(results: Dict[str, float]):
     sorted_results = sorted(results.items(), key=lambda x: x[1], reverse=True)
@@ -123,21 +128,21 @@ def performance_report(results: Dict[str, float]):
 def training_workflow(regularization: List[float]):
     """Put all of the steps together into a single workflow."""
     data = load_data()
-    processed_data = etl_preprocess_data(data=data)
+    train, test = etl_preprocess_data(data=data)
 
     results = {}
     for c in regularization:
         if c < 1:
-            c = "{:.0E}".format(c)
+            cn = "{:.0E}".format(c)
         else:
-            c = int(c)
-        name = f"train_model[C={str(c)}]"
+            cn = int(c)
+        name = f"train_model[C={str(cn)}]"
         model = train_model(
-            data=processed_data,
+            data=train,
             hyperparameters={"C": c},
-        ).with_overrides(name=f"train_model[C={str(c)}]")
-        acc = validate_model(model=model, data=processed_data).with_overrides(
-            name=f"validate_model[C={str(c)}]")
+        ).with_overrides(name=f"train_model[C={str(cn)}]")
+        acc = validate_model(model=model, data=test).with_overrides(
+            name=f"validate_model[C={str(cn)}]")
         results[name] = acc
 
     performance_report(results=results)
@@ -145,4 +150,4 @@ def training_workflow(regularization: List[float]):
 
 @workflow
 def run_training():
-    training_workflow(regularization=[0.0001, 1.0])
+    training_workflow(regularization=[0.001, 10.0])
